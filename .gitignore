@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.uv/
+dist/
+build/
+
+# Node
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+
+# Postgres data
+infra/postgres/data/
+*.db
+
+# Logs
+*.log
+
+# Pipeline cache — per-week intermediate artifacts (events.json,
+# analyses-*.json, report.json) produced by the subagents. Inspect
+# locally for debugging; never commit.
+.pipeline/

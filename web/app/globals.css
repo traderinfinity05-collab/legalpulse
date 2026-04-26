@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    background-color: theme("colors.paper");
+    color: theme("colors.ink");
+  }
+  body {
+    font-family: theme("fontFamily.sans");
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3, h4 {
+    font-family: theme("fontFamily.serif");
+    letter-spacing: -0.01em;
+  }
+}
+
+/* Long-form report body. Keep restrained — editorial, not flashy. */
+.prose-report {
+  font-family: theme("fontFamily.serif");
+  font-size: 1.0625rem;
+  line-height: 1.7;
+  color: theme("colors.ink");
+}
+.prose-report h1 {
+  font-size: 2rem;
+  font-weight: 600;
+  margin: 2rem 0 1rem;
+}
+.prose-report h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 2rem 0 0.75rem;
+}
+.prose-report h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 1.5rem 0 0.5rem;
+}
+.prose-report p {
+  margin: 0 0 1rem;
+}
+.prose-report ul, .prose-report ol {
+  margin: 0 0 1rem 1.25rem;
+}
+.prose-report li {
+  margin-bottom: 0.25rem;
+}
+.prose-report blockquote {
+  border-left: 3px solid theme("colors.rule");
+  padding-left: 1rem;
+  color: theme("colors.muted");
+  font-style: italic;
+  margin: 1rem 0;
+}
+.prose-report a {
+  color: theme("colors.usa");
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.prose-report hr {
+  border: 0;
+  border-top: 1px solid theme("colors.rule");
+  margin: 2rem 0;
+}
+.prose-report code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.95em;
+  background: #F0EFE9;
+  padding: 0.1em 0.35em;
+  border-radius: 2px;
+}
