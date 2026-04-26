@@ -1,0 +1,22 @@
+# Netlify build config for the LegalPulse web app.
+#
+# Repo layout: monorepo with the Next.js app at /web. Setting `base = "web"`
+# tells Netlify to cd into web/ before installing and building, so pnpm reads
+# web/pnpm-lock.yaml and the .next output lands at web/.next.
+#
+# pnpm version comes from `packageManager` in web/package.json (Netlify
+# enables corepack automatically for that field).
+
+[build]
+  base    = "web"
+  command = "pnpm build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# The official Next.js plugin handles SSR routing, image optimization,
+# middleware, and ISR. Netlify auto-installs it when it detects Next.js, but
+# pinning it here makes the dependency explicit.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
