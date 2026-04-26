@@ -9,7 +9,7 @@ You are orchestrating the full LegalPulse weekly run. Be sequential. Surface eve
 
 Phase 2b scope: USA only. Financial Services & Banking is the only industry expert wired up; other industries land in Phase 3. India coverage is Phase 3.
 
-## Step 0 — Determine the target week
+## Step 0 — Determine the target week and persistence mode
 
 If `$ARGUMENTS` is non-empty, parse it as a YYYY-MM-DD Monday and use that as `WEEK_OF`. Otherwise compute the most recent Monday in UTC:
 
@@ -23,6 +23,18 @@ Sanity-check: it must be a Monday and within the last ~14 days. If not, ask the 
 ```bash
 mkdir -p ".pipeline/$WEEK_OF"
 ```
+
+**Detect persistence mode.** Local dev has `web/.env` with DATABASE_URL; an Anthropic routine sandbox does not. Mode picks which persistence path each step takes.
+
+```bash
+if [ -f web/.env ]; then MODE=local; else MODE=remote; fi
+echo "MODE=$MODE"
+```
+
+- **local** → shell out to `web/scripts/persist.mjs` via `pnpm pipeline:persist` (talks to Postgres directly via `postgres.js`).
+- **remote** → build SQL with `web/scripts/build-sql.mjs` and run it via the `mcp__claude_ai_Supabase__execute_sql` tool (no env vars needed; Supabase MCP connector handles auth). PDF generation is skipped — Supabase Storage isn't on the MCP surface yet.
+
+In remote mode the `mcp__claude_ai_Supabase__execute_sql` tool MUST be available — if it isn't, halt and tell the user to attach the Supabase MCP connector to the routine.
 
 ## Step 1 — Research
 
@@ -41,11 +53,22 @@ If zero events, surface that and ask the user whether to continue (a thin week i
 
 ## Step 2 — Persist events
 
+**Local mode:**
+
 ```bash
 cd web && npx pnpm pipeline:persist events "../.pipeline/$WEEK_OF/events.json" && cd ..
 ```
 
 Capture the output — `events_inserted` and `events_skipped_dup`.
+
+**Remote mode:** build the SQL, then call `mcp__claude_ai_Supabase__execute_sql` with the result.
+
+```bash
+node web/scripts/build-sql.mjs events ".pipeline/$WEEK_OF/events.json" > ".pipeline/$WEEK_OF/events.sql"
+echo "wrote events.sql ($(wc -c < .pipeline/$WEEK_OF/events.sql) bytes)"
+```
+
+Then read `.pipeline/$WEEK_OF/events.sql` and pass its full contents as the `query` parameter to `mcp__claude_ai_Supabase__execute_sql`. The `RETURNING id, content_hash` clause yields one row per *newly inserted* event — count those for `events_inserted`. Total events minus inserted = `events_skipped_dup`.
 
 ## Step 3 — Filter events for the Financial Services agent
 
@@ -84,9 +107,20 @@ console.log('analyses parsed:', a.length);
 
 Persist:
 
+**Local mode:**
+
 ```bash
 cd web && npx pnpm pipeline:persist analyses "../.pipeline/$WEEK_OF/analyses-financial.json" && cd ..
 ```
+
+**Remote mode:**
+
+```bash
+node web/scripts/build-sql.mjs analyses ".pipeline/$WEEK_OF/analyses-financial.json" > ".pipeline/$WEEK_OF/analyses-financial.sql"
+echo "wrote analyses-financial.sql ($(wc -c < .pipeline/$WEEK_OF/analyses-financial.sql) bytes)"
+```
+
+Read the `.sql` file and pass its contents to `mcp__claude_ai_Supabase__execute_sql`. The `RETURNING id, industry, was_insert` clause yields one row per analysis — `was_insert=true` counts toward `analyses_inserted`, `was_insert=false` toward `analyses_updated`.
 
 ## Step 5 — Documentation (USA report)
 
@@ -117,7 +151,7 @@ if(wc < 600 || wc > 2000) console.warn('! word count '+wc+' outside expected 800
 
 ## Step 6 — PDF generation + Supabase Storage upload
 
-Renders the markdown body to a PDF (no Chromium dep) and uploads to the `legalpulse-pdfs` bucket. Updates the report JSON file in place with `pdf_url`.
+**Local mode:** renders the markdown body to a PDF (no Chromium dep) and uploads to the `legalpulse-pdfs` bucket. Updates the report JSON file in place with `pdf_url`.
 
 ```bash
 cd web && npx tsx --env-file=.env scripts/pdf.tsx ../.pipeline/$WEEK_OF/report-usa.json && cd ..
@@ -125,24 +159,38 @@ cd web && npx tsx --env-file=.env scripts/pdf.tsx ../.pipeline/$WEEK_OF/report-u
 
 If this fails because `SUPABASE_SERVICE_ROLE_KEY` or `NEXT_PUBLIC_SUPABASE_URL` is unset: tell the user, then continue to Step 7 with `pdf_url` left as null. The report still publishes; the "Download PDF" button stays disabled until they fix the env.
 
-## Step 7 — Persist report (with pdf_url)
+**Remote mode:** skip this step entirely. The Supabase MCP doesn't expose Storage upload, and bundling a service-role key into the routine config is unsafe. `pdf_url` stays null; the data layer still publishes. PDF generation moves to a follow-up (e.g., a Vercel API route that the routine pings post-publish).
+
+## Step 7 — Persist report
+
+**Local mode:**
 
 ```bash
 cd web && npx pnpm pipeline:persist report "../.pipeline/$WEEK_OF/report-usa.json" && cd ..
 ```
 
-This upserts on `(week_of, country, state)`. Re-running the same week updates the existing row instead of creating a duplicate.
+This upserts on `(week_of, country, state)` — see the known issue note in `web/scripts/build-sql.mjs` if state is NULL.
+
+**Remote mode:**
+
+```bash
+node web/scripts/build-sql.mjs report ".pipeline/$WEEK_OF/report-usa.json" > ".pipeline/$WEEK_OF/report-usa.sql"
+echo "wrote report-usa.sql ($(wc -c < .pipeline/$WEEK_OF/report-usa.sql) bytes)"
+```
+
+Read the `.sql` file and pass its contents to `mcp__claude_ai_Supabase__execute_sql`. This upserts on `slug` (deterministic per week+country+state), so re-runs are idempotent.
 
 ## Final summary
 
 Print a structured summary to the user:
 
 - **WEEK_OF** = $WEEK_OF
+- **MODE** = $MODE (local | remote)
 - **Events**: inserted X, skipped Y (dups)
 - **Financial Services analyses**: inserted/updated N
 - **Report**: <slug>, <word count> words, <inserted|updated>
-- **PDF**: <url or "not generated — service-role key missing">
-- **Live at**: http://localhost:3000/reports/<slug>
+- **PDF**: <url, or "not generated — service-role key missing" (local), or "skipped in remote mode" (remote)>
+- **Live at**: http://localhost:3000/reports/<slug> (local) or your deployed URL (remote)
 - **Pipeline cache**: `.pipeline/$WEEK_OF/` (intermediate artifacts; gitignored)
 
 If the user has the dev server running, suggest they hit the URL above to see the published report.
